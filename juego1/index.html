@@ -563,11 +563,22 @@
         function updateEnemies() {
             state.enemies.forEach(en => {
                 let tx = state.player.x, ty = state.player.y;
-                if(state.player.safe) {
-                    // Wander
-                    if(!en.px || Math.random() < 0.02) { en.px = Math.random()*width; en.py = Math.random()*height; }
-                    tx = en.px; ty = en.py;
+                
+                // --- NEW LOGIC START ---
+                // Hackers only chase if player HAS PACKAGE and is NOT SAFE
+                const shouldChase = state.player.carrying && !state.player.safe;
+
+                if(!shouldChase) {
+                    // Wander logic
+                    if(!en.px || Math.random() < 0.02) { 
+                        en.px = Math.random()*width; 
+                        en.py = Math.random()*height; 
+                    }
+                    tx = en.px; 
+                    ty = en.py;
                 }
+                // --- NEW LOGIC END ---
+
                 const ang = Math.atan2(ty - en.y, tx - en.x);
                 en.x += Math.cos(ang) * en.speed;
                 en.y += Math.sin(ang) * en.speed;
@@ -581,8 +592,14 @@
         function hitPlayer() {
             state.lives--;
             updateHUD(false);
-            state.player.carrying = false;
-            if(state.levelType === 'COLLECTION_ONLY') spawnPacket();
+            
+            // Check if player was carrying a packet before resetting state
+            if (state.player.carrying) {
+                state.player.carrying = false;
+                spawnPacket(); // Respawn packet if it was lost
+                showAlert("PAQUETE PERDIDO - RESPAWNED", "#ffcc00");
+            }
+
             state.player.x = state.safeZone.x; 
             state.player.y = state.safeZone.y;
             if(state.lives <= 0) endGame("INTEGRIDAD DE SESIÓN COMPROMETIDA");
@@ -818,17 +835,35 @@
                 }
             }
 
-            // 2. Safe Zone
+            // 2. Safe Zone (Abstract Energy Pool)
             const sz = state.safeZone;
+            // Pulsing opacity
+            const pulseAlpha = 0.2 + Math.sin(Date.now() / 500) * 0.1;
+            
             const grad = ctx.createRadialGradient(sz.x, sz.y, 10, sz.x, sz.y, sz.r);
-            grad.addColorStop(0, 'rgba(0, 255, 157, 0.1)');
+            grad.addColorStop(0, `rgba(0, 255, 157, ${pulseAlpha})`); // More visible center
+            grad.addColorStop(0.7, `rgba(0, 255, 157, ${pulseAlpha * 0.5})`);
             grad.addColorStop(1, 'rgba(0, 255, 157, 0.0)');
             ctx.fillStyle = grad;
             ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.r, 0, Math.PI*2); ctx.fill();
-            ctx.strokeStyle = 'rgba(0, 255, 157, 0.3)';
-            ctx.setLineDash([10, 20]);
-            ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.r, Date.now()/1000, Date.now()/1000 + Math.PI*2); ctx.stroke();
+            
+            // Rotating rings
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#00ff9d';
+            ctx.setLineDash([15, 15]);
+            ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.r, Date.now()/2000, Date.now()/2000 + Math.PI*2); ctx.stroke();
+            
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(0, 255, 157, 0.5)';
+            ctx.setLineDash([5, 10]);
+            ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.r * 0.8, -Date.now()/2000, -Date.now()/2000 + Math.PI*2); ctx.stroke();
             ctx.setLineDash([]);
+
+            // Label
+            ctx.fillStyle = 'rgba(0, 255, 157, 0.8)';
+            ctx.font = '10px "Rajdhani"';
+            ctx.textAlign = 'center';
+            ctx.fillText("ZONA SEGURA", sz.x, sz.y + sz.r + 15);
 
             // 3. Lightning Connection
             if(state.server.active && !state.server.locked && !state.server.crashed) {
