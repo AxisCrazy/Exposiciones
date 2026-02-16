@@ -336,8 +336,14 @@
             height = window.innerHeight;
             canvas.width = width;
             canvas.height = height;
+            // FIX: Ensure safe zone stays accessible if not in moving mode
+            if(state.mode === 'MENU' || !state.safeZoneMoving) {
+                state.safeZone.x = width/2;
+                state.safeZone.y = height/2;
+            }
+            // For MENU only set initial size
             if(state.mode === 'MENU') {
-                state.safeZone = { x: width/2, y: height/2, r: 100 };
+                state.safeZone.r = 100;
             }
         }
 
@@ -837,33 +843,49 @@
 
             // 2. Safe Zone (Abstract Energy Pool)
             const sz = state.safeZone;
-            // Pulsing opacity
-            const pulseAlpha = 0.2 + Math.sin(Date.now() / 500) * 0.1;
+            // Pulsing opacity - INCREASED VISIBILITY
+            const pulseAlpha = 0.3 + Math.sin(Date.now() / 500) * 0.1; 
             
+            // Draw floor pattern
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(sz.x, sz.y, sz.r, 0, Math.PI * 2);
+            ctx.clip();
+            ctx.strokeStyle = 'rgba(0, 255, 157, 0.1)';
+            ctx.lineWidth = 1;
+            const gridSz = 20;
+            for(let gx = sz.x - sz.r; gx < sz.x + sz.r; gx += gridSz) {
+                ctx.beginPath(); ctx.moveTo(gx, sz.y - sz.r); ctx.lineTo(gx, sz.y + sz.r); ctx.stroke();
+            }
+            ctx.restore();
+
             const grad = ctx.createRadialGradient(sz.x, sz.y, 10, sz.x, sz.y, sz.r);
-            grad.addColorStop(0, `rgba(0, 255, 157, ${pulseAlpha})`); // More visible center
-            grad.addColorStop(0.7, `rgba(0, 255, 157, ${pulseAlpha * 0.5})`);
+            grad.addColorStop(0, `rgba(0, 255, 157, ${pulseAlpha})`);
+            grad.addColorStop(0.8, `rgba(0, 255, 157, ${pulseAlpha * 0.3})`);
             grad.addColorStop(1, 'rgba(0, 255, 157, 0.0)');
             ctx.fillStyle = grad;
             ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.r, 0, Math.PI*2); ctx.fill();
             
-            // Rotating rings
-            ctx.lineWidth = 2;
+            // Solid Outer Ring (Always visible)
+            ctx.lineWidth = 3;
             ctx.strokeStyle = '#00ff9d';
-            ctx.setLineDash([15, 15]);
-            ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.r, Date.now()/2000, Date.now()/2000 + Math.PI*2); ctx.stroke();
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#00ff9d';
+            ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.r, 0, Math.PI*2); ctx.stroke();
+            ctx.shadowBlur = 0;
             
-            ctx.lineWidth = 1;
-            ctx.strokeStyle = 'rgba(0, 255, 157, 0.5)';
-            ctx.setLineDash([5, 10]);
-            ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.r * 0.8, -Date.now()/2000, -Date.now()/2000 + Math.PI*2); ctx.stroke();
+            // Rotating inner ring
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.setLineDash([15, 15]);
+            ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.r * 0.9, Date.now()/2000, Date.now()/2000 + Math.PI*2); ctx.stroke();
             ctx.setLineDash([]);
 
             // Label
-            ctx.fillStyle = 'rgba(0, 255, 157, 0.8)';
-            ctx.font = '10px "Rajdhani"';
+            ctx.fillStyle = '#00ff9d';
+            ctx.font = 'bold 12px "Rajdhani"';
             ctx.textAlign = 'center';
-            ctx.fillText("ZONA SEGURA", sz.x, sz.y + sz.r + 15);
+            ctx.fillText("ZONA SEGURA", sz.x, sz.y + sz.r + 20);
 
             // 3. Lightning Connection
             if(state.server.active && !state.server.locked && !state.server.crashed) {
