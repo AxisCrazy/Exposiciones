@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SESSION, PLEASE: Protocol Guardian v5</title>
+    <style>
+        :root {
+            --bg-color: #0d0d0d;
+            --terminal-green: #33ff00;
+            --terminal-amber: #ffb000;
+            --alert-red: #ff3333;
+            --panel-bg: #1a1a1a;
+            --border-light: #444;
+        }
+
+        @font-face {
+            font-family: 'PixelOperator';
+            src: local('Courier New');
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--terminal-green);
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* CRT Effects */
+        .crt::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 999;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+        
+        .screen-flicker { animation: flicker 0.15s infinite; }
+        @keyframes flicker { 0% { opacity: 0.97; } 100% { opacity: 1; } }
+
+        /* Screens */
+        .screen {
+            display: none;
+            width: 100%;
+            height: 100%;
+            flex-direction: column;
+            position: absolute;
+            top: 0; left: 0;
+        }
+        .screen.active { display: flex; }
+
+        /* MENU */
+        #menu-screen {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background: #000;
+        }
+
+        .title-glitch {
+            font-size: 4em;
+            font-weight: bold;
+            text-shadow: 2px 2px var(--alert-red), -2px -2px blue;
+            margin-bottom: 20px;
+        }
+
+        .menu-btn {
+            background: transparent;
+            border: 2px solid var(--terminal-green);
+            color: var(--terminal-green);
+            padding: 15px 30px;
+            font-size: 1.5em;
+            margin: 10px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.2s;
+            text-transform: uppercase;
+        }
+        .menu-btn:hover {
+            background: var(--terminal-green);
+            color: #000;
+            box-shadow: 0 0 15px var(--terminal-green);
+        }
+
+        /* GAME HUD */
+        header {
+            background: #050505;
+            padding: 10px 20px;
+            border-bottom: 2px solid var(--terminal-green);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 60px;
+            font-size: 0.9em;
+        }
+
+        .stat-group {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .stat-item {
+            border: 1px solid #333;
+            padding: 5px 10px;
+            background: #111;
+        }
+
+        #game-layout {
+            display: flex;
+            flex: 1;
+            padding: 20px;
+            gap: 20px;
+            height: calc(100% - 100px);
+        }
+
+        /* PANELS */
+        .panel {
+            background: var(--panel-bg);
+            border: 2px solid var(--border-light);
+            padding: 15px;
+            position: relative;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        #left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 300px;
+        }
+
+        #rule-book {
+            flex: 1;
+            background: #e0e0e0;
+            color: #111;
+            padding: 15px;
+            border: 4px solid #333;
+            font-size: 0.9em;
+            overflow-y: auto;
+        }
+        
+        .rule-item { margin-bottom: 8px; padding-left: 15px; position: relative; line-height: 1.2; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        .rule-item::before { content: "►"; position: absolute; left: 0; color: #b30000; font-weight: bold;}
+
+        /* CENTER DESK */
+        #desk-panel {
+            flex: 3;
+            background: #2a2a2a;
+            position: relative;
+            overflow: hidden;
+            border: 10px solid #1a1a1a;
+            /* Texture */
+            background-image: radial-gradient(#333 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        #empty-desk-msg {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #555;
+            font-size: 1.5em;
+            text-transform: uppercase;
+            border: 2px dashed #444;
+            padding: 20px;
+            opacity: 0.5;
+        }
+
+        /* CHAT BUBBLE */
+        #chat-bubble {
+            position: absolute;
+            top: 20px; left: 50%;
+            transform: translateX(-50%);
+            background: #000;
+            border: 1px solid var(--terminal-green);
+            padding: 10px 20px;
+            max-width: 80%;
+            display: none;
+            z-index: 20;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.8);
+        }
+        #chat-bubble::after {
+            content: ''; position: absolute; bottom: -10px; left: 50%;
+            border-width: 10px 10px 0; border-style: solid;
+            border-color: var(--terminal-green) transparent transparent transparent;
+        }
+
+        /* --- ITEMS ON DESK --- */
+
+        /* 1. THE REQUEST DOCUMENT (Paper) */
+        #doc-request {
+            width: 300px;
+            height: 440px;
+            background: #fdfdfd;
+            color: #111;
+            padding: 20px;
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.7);
+            
+            position: absolute;
+            left: 30%; 
+            top: 50%;
+            margin-left: -150px; 
+            margin-top: -220px;
+            
+            transition: transform 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+            transform: translateY(-200vh);
+            z-index: 10;
+        }
+
+        /* 2. THE PAYLOAD (Disk/Box) */
+        #doc-payload {
+            width: 250px;
+            height: 280px;
+            background: #111;
+            border: 2px solid #555;
+            color: var(--terminal-green);
+            padding: 15px;
+            box-shadow: 10px 10px 20px rgba(0,0,0,0.9);
+            font-family: 'Courier New', monospace;
+            
+            position: absolute;
+            left: 70%; 
+            top: 55%;
+            margin-left: -125px; 
+            margin-top: -140px;
+
+            transition: transform 0.6s cubic-bezier(0.19, 1, 0.22, 1);
+            transform: translateY(-200vh);
+            z-index: 11;
+            cursor: pointer;
+        }
+
+        #doc-payload:hover { border-color: #fff; }
+
+        /* 3. STICKY NOTE (BRIBE) */
+        #sticky-note {
+            width: 140px;
+            height: 140px;
+            background: #ffeb3b;
+            color: #000;
+            padding: 15px;
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            font-size: 0.9em;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.4);
+            position: absolute;
+            top: 20px; right: -20px;
+            transform: rotate(5deg);
+            display: none;
+            z-index: 15;
+        }
+
+        /* Animation Classes */
+        .item-on-desk { transform: translateY(0) rotate(-2deg) !important; }
+        .item-on-desk-2 { transform: translateY(0) rotate(3deg) !important; }
+
+        .exit-right { transform: translateX(120vw) rotate(20deg) !important; transition: transform 0.5s ease-in !important; }
+        .exit-left { transform: translateX(-120vw) rotate(-20deg) !important; transition: transform 0.5s ease-in !important; }
+
+        /* Document Styles */
+        .doc-header {
+            border-bottom: 4px solid #000;
+            margin-bottom: 15px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .data-row { margin-bottom: 8px; border-bottom: 1px dotted #ccc; padding-bottom: 2px; }
+        .data-label { font-size: 0.7em; color: #666; text-transform: uppercase; }
+        
+        /* INTERACTIVE FIELDS */
+        .data-value { 
+            font-weight: bold; 
+            font-size: 1.1em; 
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: 0.2s;
+        }
+        .data-value:hover {
+            background-color: rgba(255, 0, 0, 0.05);
+        }
+
+        /* USER MARK (Red Circle Effect) */
+        .user-marked {
+            color: var(--alert-red) !important;
+            border: 2px solid var(--alert-red);
+            border-radius: 50%;
+            padding: 2px 8px;
+            transform: rotate(-2deg);
+            display: inline-block;
+        }
+        
+        .expiry-box {
+            border: 2px solid #000;
+            padding: 5px;
+            margin-top: 15px;
+            text-align: center;
+        }
+        .expiry-label { font-size: 0.7em; text-transform: uppercase;}
+        
+        .expiry-date { 
+            font-weight: bold; 
+            font-size: 1.2em;
+            cursor: pointer;
+        }
+        .expiry-date:hover { background-color: rgba(255,0,0,0.05); }
+
+        /* Payload Styles */
+        .payload-label { color: #888; font-size: 0.8em; margin-bottom: 5px; }
+        .payload-val { font-size: 1.1em; margin-bottom: 15px; border-bottom: 1px solid #333; color: #fff;}
+        
+        .hidden-data { filter: blur(4px); cursor: pointer; transition: 0.2s; }
+        .hidden-data:hover { filter: blur(2px); }
+        .revealed-data { filter: blur(0); color: var(--terminal-amber); cursor: pointer; }
+
+        .virus-scan-box {
+            margin-top: 10px; padding: 10px; border: 1px dashed #444; text-align: center; font-size: 0.8em; cursor: pointer;
+        }
+        .scan-safe { color: var(--terminal-green); border-color: var(--terminal-green); }
+        .scan-danger { color: var(--alert-red); border-color: var(--alert-red); animation: blink 0.5s infinite; }
+
+        @keyframes blink { 50% { opacity: 0.5; } }
+
+        /* Stamps */
+        .stamp-mark {
+            position: absolute; bottom: 20px; right: 20px;
+            font-size: 24px; font-weight: 900; border: 4px solid;
+            padding: 5px 10px; text-transform: uppercase;
+            opacity: 0; transform: scale(2) rotate(-15deg);
+            pointer-events: none; transition: 0.1s;
+        }
+        .stamp-mark.stamped { opacity: 0.9; transform: scale(1) rotate(-15deg); }
+        .s-approved { color: green; border-color: green; }
+        .s-denied { color: red; border-color: red; }
+
+        /* CONTROLS */
+        #controls-panel { width: 150px; display: flex; flex-direction: column; gap: 10px; }
+        .btn-game { flex: 1; border: none; cursor: pointer; font-weight: bold; font-size: 1em; text-transform: uppercase; box-shadow: 0 4px 0 #000; transition: 0.1s; }
+        .btn-game:active { transform: translateY(4px); box-shadow: 0 1px 0 #000; }
+        
+        .btn-ok { background: #4caf50; }
+        .btn-no { background: #f44336; }
+        .btn-bribe { background: #ffeb3b; color: #000; font-size: 0.8em; display: none; } /* Hidden by default */
+        .btn-next { background: #999; height: 60px; margin-top: auto; }
+
+        /* SUSPICION METER */
+        #suspicion-bar {
+            width: 100%; height: 10px; background: #333; margin-top: 5px; border: 1px solid #555;
+        }
+        #suspicion-fill {
+            width: 0%; height: 100%; background: #9c27b0; transition: width 0.3s;
+        }
+
+        /* OVERLAYS */
+        #story-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.96); display: none;
+            flex-direction: column; justify-content: center; align-items: center; z-index: 100;
+        }
+        .story-text { color: #fff; max-width: 600px; line-height: 1.6; margin-bottom: 30px; font-size: 1.1em; white-space: pre-wrap; }
+
+        #msg-overlay {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.8); padding: 10px 20px;
+            color: var(--alert-red); border: 1px solid var(--alert-red);
+            display: none; z-index: 50;
+        }
+
+    </style>
+</head>
+<body class="crt screen-flicker">
+
+    <!-- MENU -->
+    <div id="menu-screen" class="screen active">
+        <div class="title-glitch">SESSION<br>GUARDIAN</div>
+        <div style="color: #666; margin-bottom: 30px;">V 5.0 // DETECTIVE EDITION</div>
+        <button class="menu-btn" onclick="app.startCampaign()">MODO CAMPAÑA</button>
+        <button class="menu-btn" onclick="app.startArcade()">MODO ARCADE</button>
+    </div>
+
+    <!-- GAME -->
+    <div id="game-screen" class="screen">
+        <header>
+            <div style="display:flex; flex-direction:column;">
+                <div style="color:var(--terminal-amber); font-weight:bold;">FECHA: <span id="today-date">2084-01-01</span></div>
+                <div style="font-size:0.8em; color:#888;">NIVEL: <span id="lvl-lbl">1</span></div>
+            </div>
+            
+            <div class="stat-group">
+                <div class="stat-item">CRÉDITOS: <span id="score-lbl">0</span></div>
+                <div class="stat-item" style="border-color: #9c27b0;">
+                    SOSPECHA
+                    <div id="suspicion-bar"><div id="suspicion-fill"></div></div>
+                </div>
+            </div>
+
+            <div class="stat-group">
+                <div class="stat-item" style="color:var(--alert-red)">FALLOS: <span id="fails-lbl">0</span>/3</div>
+                <div class="stat-item"><span id="time-lbl">00:00</span></div>
+            </div>
+        </header>
+
+        <div id="game-layout">
+            <!-- Left: Rules -->
+            <div id="left-panel">
+                <div class="panel" style="text-align:center;">
+                    <div style="font-size:0.8em; color:#888;">COLA DE ESPERA</div>
+                    <div id="queue-count" style="font-size:2em;">--</div>
+                </div>
+                <div id="rule-book">
+                    <h3 style="background:#000; color:#fff; padding:5px;">MANUAL OP.</h3>
+                    <div id="rules-list"></div>
+                    <div style="margin-top:10px; font-size:0.8em; color:#555; border-top:1px solid #999; padding-top:5px;">
+                        *¡OJO! No hay alertas automáticas.<br>
+                        *Haz clic en los datos para MARCAR errores sospechosos.
+                    </div>
+                </div>
+                <button class="menu-btn" style="font-size:0.8em; padding:10px;" onclick="location.reload()">RENDIRSE</button>
+            </div>
+
+            <!-- Center: Desk -->
+            <div id="desk-panel">
+                <div id="empty-desk-msg">ESPERANDO TRÁFICO...</div>
+
+                <div id="chat-bubble">Por favor, necesito enviar esto urgentemente.</div>
+
+                <!-- ITEM 1: THE REQUEST (PAPER) -->
+                <div id="doc-request">
+                    <div class="doc-header">
+                        <div style="background:#000; color:#fff; padding:3px 8px; font-weight:bold;">SOLICITUD</div>
+                        <div id="req-id">#0000</div>
+                    </div>
+                    <div class="data-row">
+                        <div class="data-label">PROTOCOLO (DECLARADO)</div>
+                        <div class="data-value" id="req-proto" onclick="game.toggleMark(this)">TCP</div>
+                    </div>
+                    <div class="data-row">
+                        <div class="data-label">ORIGEN</div>
+                        <div class="data-value" id="req-origin" onclick="game.toggleMark(this)">INTERNAL</div>
+                    </div>
+                    <div class="data-row">
+                        <div class="data-label">TOKEN ID</div>
+                        <div class="data-value" id="req-token" onclick="game.toggleMark(this)" style="font-family:monospace; font-size:0.9em;">A1-B2</div>
+                    </div>
+                    
+                    <div class="expiry-box">
+                        <div class="expiry-label">VÁLIDO HASTA</div>
+                        <div class="expiry-date" id="req-expiry" onclick="game.toggleMark(this)">2084-01-01</div>
+                    </div>
+
+                    <!-- Sticky Note -->
+                    <div id="sticky-note">
+                        ¡Hola amigo!<br>
+                        Acepta esto y llévate <span id="bribe-amt">50</span> créditos.<br>
+                        ;)
+                    </div>
+                    
+                    <!-- Stamps -->
+                    <div id="stamp-ok" class="stamp-mark s-approved">APROBADO</div>
+                    <div id="stamp-no" class="stamp-mark s-denied">DENEGADO</div>
+                </div>
+
+                <!-- ITEM 2: THE PAYLOAD (BOX/DISK) -->
+                <div id="doc-payload">
+                    <div style="border-bottom: 1px solid #444; margin-bottom:10px; padding-bottom:5px; color:#888;">
+                        [ INSPECTOR DE PAQUETE ]
+                    </div>
+                    
+                    <div class="payload-label">CABECERA REAL (CLICK PARA VER)</div>
+                    <div class="payload-val hidden-data" id="pay-real-proto" onclick="game.revealField(this)">TCP</div>
+
+                    <div class="payload-label">FORMATO / TAMAÑO</div>
+                    <div class="payload-val" id="pay-meta">??? / 0MB</div>
+
+                    <div id="virus-box" class="virus-scan-box" onclick="game.scanVirus()">
+                        [ INICIAR ANTIVIRUS ]
+                    </div>
+                </div>
+
+                <div id="msg-overlay">ERROR DETECTADO</div>
+            </div>
+
+            <!-- Right: Controls -->
+            <div id="controls-panel">
+                <button class="btn-game btn-ok" onclick="game.stamp(true)">APROBAR</button>
+                <button class="btn-game btn-no" onclick="game.stamp(false)">DENEGAR</button>
+                <div style="height: 10px;"></div>
+                <button id="btn-bribe" class="btn-game btn-bribe" onclick="game.takeBribe()">ACEPTAR SOBORNO</button>
+                <div style="flex:1"></div>
+                <button class="btn-game btn-next" onclick="game.next()">SIGUIENTE >></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- STORY OVERLAY -->
+    <div id="story-overlay">
+        <h2 id="story-title" style="color:var(--terminal-green); border-bottom: 2px solid;"></h2>
+        <div id="story-body" class="story-text"></div>
+        <button class="menu-btn" onclick="app.closeStory()">COMENZAR TURNO</button>
+    </div>
+
+    <script>
+        /* --- CONFIGURATION --- */
+        const PROTOCOLS = ['TCP', 'UDP', 'HTTP', 'FTP', 'SMTP'];
+        const ORIGINS = ['INTERNAL', 'PARTNER', 'UNKNOWN', 'BLACKLISTED', 'DARKNET'];
+        const FORMATS = ['JSON', 'XML', 'TXT', 'EXE', 'BAT', 'BIN'];
+        const CHATTER = [
+            "Es solo una foto de mi gato.",
+            "Mi jefe me matará si esto no llega.",
+            "Soy del soporte técnico, es una prueba.",
+            "No mires el contenido, es privado.",
+            "...",
+            "¡Rápido, por favor!"
+        ];
+
+        const CURRENT_DATE_STR = "2084-05-15";
+        const CURRENT_DATE = new Date(CURRENT_DATE_STR);
+
+        const LEVELS = [
+            {
+                id: 1, title: "DÍA 1: VERIFICACIÓN VISUAL",
+                desc: "Bienvenido a la unidad.\n\nRecuerda: El sistema NO detecta errores automáticamente.\n\n1. Revisa la Fecha de Caducidad (Hoy es 2084-05-15).\n2. Revisa el Origen (No 'BLACKLISTED').\n\nSi ves algo mal, haz clic en el texto para marcarlo.",
+                quota: 5, time: 90,
+                rules: [
+                    { txt: "Denegar Tokens Caducados", type: 'expiry' },
+                    { txt: "Denegar origen BLACKLISTED", type: 'origin_blacklist' }
+                ]
+            },
+            {
+                id: 2, title: "DÍA 2: FALSIFICACIONES",
+                desc: "Atención: Tráfico falso detectado.\n\nDebes contrastar el 'Protocolo Declarado' con la 'Cabecera Real' (en el paquete negro).\n\nSi no coinciden, es una falsificación. Marca la cabecera si sospechas.",
+                quota: 8, time: 80,
+                rules: [
+                    { txt: "Denegar Tokens Caducados", type: 'expiry' },
+                    { txt: "Denegar Falsificaciones (Proto Mismatch)", type: 'mismatch' }
+                ]
+            },
+            {
+                id: 3, title: "DÍA 3: ALERTA ROJA",
+                desc: "Sobornos, virus y falsificaciones. Es un caos ahí fuera.\n\nUsa el escáner de virus. No aceptes dinero sucio a menos que estés desesperado.\n\nMantén los ojos abiertos.",
+                quota: 10, time: 90,
+                rules: [
+                    { txt: "Denegar Tokens Caducados", type: 'expiry' },
+                    { txt: "Denegar Falsificaciones", type: 'mismatch' },
+                    { txt: "Denegar Virus Detectados", type: 'virus' }
+                ]
+            }
+        ];
+
+        /* --- GAME LOGIC --- */
+        const app = {
+            state: 'MENU',
+            lvlIdx: 0,
+            
+            startCampaign: function() {
+                this.lvlIdx = 0;
+                this.loadLevel(this.lvlIdx);
+            },
+            
+            startArcade: function() {
+                game.initArcade();
+            },
+
+            loadLevel: function(idx) {
+                if(idx >= LEVELS.length) {
+                    this.showStory("VICTORIA", "Has demostrado ser un Guardián infalible.\nTu capacidad de deducción es admirable.\n\nFin de la transmisión.");
+                    return;
+                }
+                const data = LEVELS[idx];
+                game.initLevel(data);
+                this.showStory(data.title, data.desc);
+            },
+
+            showStory: function(t, d) {
+                document.getElementById('menu-screen').classList.remove('active');
+                document.getElementById('game-screen').classList.add('active');
+                document.getElementById('story-overlay').style.display = 'flex';
+                document.getElementById('story-title').innerText = t;
+                document.getElementById('story-body').innerText = d;
+            },
+
+            closeStory: function() {
+                document.getElementById('story-overlay').style.display = 'none';
+                game.startTimer();
+                setTimeout(() => game.next(), 500); 
+            }
+        };
+
+        const game = {
+            active: false,
+            data: null, 
+            rules: [],
+            score: 0,
+            suspicion: 0,
+            fails: 0,
+            timeLeft: 0,
+            timer: null,
+            processed: 0,
+            isArcade: false,
+
+            initLevel: function(levelData) {
+                this.reset();
+                this.isArcade = false;
+                this.rules = levelData.rules;
+                this.timeLeft = levelData.time;
+                this.updateRulesUI();
+                this.updateHUD();
+                
+                document.getElementById('today-date').innerText = CURRENT_DATE_STR;
+                document.getElementById('lvl-lbl').innerText = levelData.id;
+            },
+
+            initArcade: function() {
+                this.reset();
+                this.isArcade = true;
+                this.timeLeft = 60;
+                this.rules = [
+                    { txt: "Denegar Caducados", type: 'expiry' },
+                    { txt: "Denegar Mismatch", type: 'mismatch' }
+                ];
+                
+                document.getElementById('menu-screen').classList.remove('active');
+                document.getElementById('game-screen').classList.add('active');
+                this.updateRulesUI();
+                this.updateHUD();
+                document.getElementById('today-date').innerText = CURRENT_DATE_STR;
+                
+                this.active = true;
+                this.startTimer();
+                setTimeout(() => this.next(), 500);
+            },
+
+            reset: function() {
+                this.score = 0;
+                this.fails = 0;
+                this.processed = 0;
+                this.suspicion = 0;
+                this.active = true;
+                this.data = null;
+                clearInterval(this.timer);
+                
+                const r = document.getElementById('doc-request');
+                const p = document.getElementById('doc-payload');
+                r.style.transform = 'translateY(-200vh)';
+                p.style.transform = 'translateY(-200vh)';
+                
+                document.getElementById('empty-desk-msg').style.display = 'block';
+                document.getElementById('chat-bubble').style.display = 'none';
+                this.resetUI();
+            },
+
+            generateData: function() {
+                const scenarioRoll = Math.random();
+                let scenario = 'valid';
+                if(scenarioRoll < 0.25) scenario = 'expired';
+                else if(scenarioRoll < 0.5) scenario = 'mismatch';
+                else if(scenarioRoll < 0.65) scenario = 'virus';
+
+                const proto = PROTOCOLS[Math.floor(Math.random()*PROTOCOLS.length)];
+                const altProto = PROTOCOLS[Math.floor(Math.random()*PROTOCOLS.length)]; 
+                const origin = ORIGINS[Math.floor(Math.random()*ORIGINS.length)];
+                
+                let expiryDate = new Date(CURRENT_DATE);
+                if(scenario === 'expired') {
+                    expiryDate.setDate(expiryDate.getDate() - Math.floor(Math.random()*30) - 1);
+                } else {
+                    expiryDate.setDate(expiryDate.getDate() + Math.floor(Math.random()*365) + 1);
+                }
+                const expiryStr = expiryDate.toISOString().split('T')[0];
+
+                const realProto = (scenario === 'mismatch' && proto !== altProto) ? altProto : proto;
+                const isVirus = (scenario === 'virus');
+                const hasBribe = Math.random() < 0.15;
+                const bribeAmt = Math.floor(Math.random()*40) + 10;
+
+                return {
+                    req: {
+                        id: Math.floor(Math.random()*9000)+1000,
+                        proto: proto,
+                        origin: origin,
+                        expiry: expiryStr,
+                        isExpired: (scenario === 'expired')
+                    },
+                    pay: {
+                        realProto: realProto,
+                        isMismatch: (proto !== realProto),
+                        format: FORMATS[Math.floor(Math.random()*FORMATS.length)],
+                        size: Math.floor(Math.random()*800) + ' MB',
+                        virusStatus: isVirus ? 'DETECTED' : 'CLEAN',
+                        scanned: false,
+                        revealed: false
+                    },
+                    bribe: { active: hasBribe, amount: bribeAmt, taken: false },
+                    chatter: CHATTER[Math.floor(Math.random()*CHATTER.length)]
+                };
+            },
+
+            next: function() {
+                if(!this.active || this.data) return;
+
+                this.data = this.generateData();
+                const {req, pay, bribe, chatter} = this.data;
+
+                // UI Populate
+                document.getElementById('req-id').innerText = "#" + req.id;
+                document.getElementById('req-proto').innerText = req.proto;
+                document.getElementById('req-origin').innerText = req.origin;
+                document.getElementById('req-expiry').innerText = req.expiry;
+                
+                // Remove auto-highlights
+                document.getElementById('req-expiry').style.color = 'inherit';
+                document.getElementById('req-origin').style.color = 'inherit';
+                
+                // Clear Marks
+                this.clearMarks(['req-proto', 'req-origin', 'req-token', 'req-expiry', 'pay-real-proto']);
+
+                // Payload UI
+                document.getElementById('pay-real-proto').innerText = pay.realProto;
+                document.getElementById('pay-real-proto').className = 'payload-val hidden-data'; 
+                document.getElementById('pay-meta').innerText = pay.format + " / " + pay.size;
+                
+                const vb = document.getElementById('virus-box');
+                vb.innerText = "[ INICIAR ANTIVIRUS ]";
+                vb.className = 'virus-scan-box';
+
+                // Bribe UI
+                const note = document.getElementById('sticky-note');
+                const btnBribe = document.getElementById('btn-bribe');
+                if(bribe.active) {
+                    note.style.display = 'block';
+                    document.getElementById('bribe-amt').innerText = bribe.amount;
+                    btnBribe.style.display = 'block';
+                    btnBribe.innerText = `ACEPTAR SOBORNO (+${bribe.amount})`;
+                } else {
+                    note.style.display = 'none';
+                    btnBribe.style.display = 'none';
+                }
+
+                const chat = document.getElementById('chat-bubble');
+                chat.innerText = chatter;
+                chat.style.display = Math.random() > 0.4 ? 'block' : 'none';
+
+                // Animations
+                document.getElementById('empty-desk-msg').style.display = 'none';
+                this.resetUI();
+                
+                const rEl = document.getElementById('doc-request');
+                const pEl = document.getElementById('doc-payload');
+                rEl.classList.remove('exit-right', 'exit-left');
+                pEl.classList.remove('exit-right', 'exit-left');
+                void rEl.offsetWidth; 
+                rEl.classList.add('item-on-desk');
+                setTimeout(() => pEl.classList.add('item-on-desk-2'), 150);
+            },
+
+            revealField: function(el) {
+                if (!this.data.pay.revealed) {
+                    el.className = 'payload-val revealed-data';
+                    this.data.pay.revealed = true;
+                } else {
+                    // If already revealed, treat click as marking
+                    this.toggleMark(el);
+                }
+            },
+            
+            toggleMark: function(el) {
+                el.classList.toggle('user-marked');
+            },
+            
+            clearMarks: function(ids) {
+                ids.forEach(id => {
+                    document.getElementById(id).classList.remove('user-marked');
+                });
+            },
+
+            scanVirus: function() {
+                if(!this.data || this.data.pay.scanned) return;
+                const vb = document.getElementById('virus-box');
+                vb.innerText = "ESCANEO: " + this.data.pay.virusStatus;
+                
+                if(this.data.pay.virusStatus !== 'CLEAN') vb.classList.add('scan-danger');
+                else vb.classList.add('scan-safe');
+                
+                this.data.pay.scanned = true;
+            },
+
+            takeBribe: function() {
+                if(!this.data || !this.data.bribe.active || this.data.bribe.taken) return;
+                
+                this.data.bribe.taken = true;
+                this.score += this.data.bribe.amount;
+                this.suspicion += 34; 
+                
+                document.getElementById('sticky-note').style.display = 'none';
+                document.getElementById('btn-bribe').style.display = 'none';
+                
+                this.updateHUD();
+                this.stamp(true);
+            },
+
+            stamp: function(approved) {
+                if(!this.data) return;
+
+                const stampId = approved ? 'stamp-ok' : 'stamp-no';
+                document.getElementById(stampId).classList.add('stamped');
+
+                let isActuallyValid = true;
+                let failReason = "";
+
+                if(this.data.req.isExpired) { isActuallyValid = false; failReason = "Caducado"; }
+                if(this.data.pay.isMismatch) { isActuallyValid = false; failReason = "Falsificación (Protocolo)"; }
+                if(this.data.req.origin === 'BLACKLISTED') { isActuallyValid = false; failReason = "Lista Negra"; }
+                
+                const checkVirus = this.rules.find(r => r.type === 'virus');
+                if(checkVirus && this.data.pay.virusStatus !== 'CLEAN') {
+                    isActuallyValid = false; 
+                    failReason = "Virus";
+                }
+
+                let playerCorrect = (approved === isActuallyValid);
+                if(this.data.bribe.taken) playerCorrect = true; 
+
+                setTimeout(() => this.resolve(playerCorrect, approved, failReason), 600);
+            },
+
+            resolve: function(correct, approved, reason) {
+                const rEl = document.getElementById('doc-request');
+                const pEl = document.getElementById('doc-payload');
+                const exitClass = approved ? 'exit-right' : 'exit-left';
+                
+                rEl.classList.remove('item-on-desk'); pEl.classList.remove('item-on-desk-2');
+                rEl.classList.add(exitClass); pEl.classList.add(exitClass);
+
+                if(correct) {
+                    this.score += 50;
+                    if(this.isArcade) this.timeLeft += 3;
+                } else {
+                    this.fails++;
+                    this.showMsg("FALLO DE PROTOCOLO: " + reason);
+                }
+
+                this.data = null;
+                this.processed++;
+                this.updateHUD();
+
+                if(this.fails >= 3) { this.gameOver("Demasiados errores."); return; }
+                if(this.suspicion >= 100) { this.gameOver("Arrestado por Asuntos Internos (Sospecha Máxima)."); return; }
+
+                if(!this.isArcade && this.processed >= LEVELS[app.lvlIdx].quota) {
+                    this.active = false;
+                    setTimeout(() => {
+                        app.lvlIdx++;
+                        app.loadLevel(app.lvlIdx);
+                    }, 1000);
+                    return;
+                }
+
+                setTimeout(() => {
+                    if(!this.data) document.getElementById('empty-desk-msg').style.display = 'block';
+                }, 500);
+            },
+
+            showMsg: function(txt) {
+                const o = document.getElementById('msg-overlay');
+                o.innerText = txt;
+                o.style.display = 'block';
+                setTimeout(() => o.style.display = 'none', 2000);
+            },
+
+            gameOver: function(reason) {
+                this.active = false;
+                clearInterval(this.timer);
+                alert("FIN DE SESIÓN\n\n" + reason);
+                location.reload();
+            },
+
+            startTimer: function() {
+                clearInterval(this.timer);
+                this.timer = setInterval(() => {
+                    if(!this.active) return;
+                    this.timeLeft--;
+                    this.updateHUD();
+                    if(this.timeLeft <= 0) this.gameOver("Tiempo agotado.");
+                }, 1000);
+            },
+
+            updateHUD: function() {
+                document.getElementById('score-lbl').innerText = this.score;
+                document.getElementById('fails-lbl').innerText = this.fails;
+                document.getElementById('queue-count').innerText = Math.max(0, (this.isArcade ? 99 : LEVELS[app.lvlIdx].quota - this.processed));
+                
+                const m = Math.floor(this.timeLeft / 60);
+                const s = this.timeLeft % 60;
+                document.getElementById('time-lbl').innerText = `${m}:${s<10?'0'+s:s}`;
+
+                document.getElementById('suspicion-fill').style.width = this.suspicion + "%";
+            },
+
+            updateRulesUI: function() {
+                const list = document.getElementById('rules-list');
+                list.innerHTML = '';
+                this.rules.forEach(r => {
+                    const d = document.createElement('div');
+                    d.className = 'rule-item';
+                    d.innerText = r.txt;
+                    list.appendChild(d);
+                });
+            },
+
+            resetUI: function() {
+                document.getElementById('stamp-ok').classList.remove('stamped');
+                document.getElementById('stamp-no').classList.remove('stamped');
+                document.getElementById('chat-bubble').style.display = 'none';
+            }
+        };
+
+    </script>
+</body>
+</html>
